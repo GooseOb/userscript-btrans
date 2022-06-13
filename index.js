@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Check time num
 // @namespace    https://greasyfork.org/ru/users/901750-gooseob
-// @version      0.1
+// @version      1.0
 // @description  Check the transport time num in the timetable
 // @author       GooseOb
 // @match        https://*.btrans.by/*
@@ -17,33 +17,50 @@
 	});
 
 	const hours = table.getCeilsContent('.timetable-ceil-hour').map(Number);
-	hours.last = hours[hours.length];
+	const lastHour = hours[hours.length];
 
 	const NOT_FOUND = 'Time not found (Час ня знойдзены)';
 
-	window.getTimeNum = (time, isWeekend = false) => {
-		let [h, m] = time.split(':').map(Number);
-		const hoursNum = hours.indexOf(h);
-		if (
-			hoursNum === -1 ||
-			h > hours.last ||
-			m > 60
-		) return NOT_FOUND;
-		const minutes = table.getCeilsContent(
-			`.timetable-ceil-day-minutes.week${isWeekend ? 'ends' : 'days'}`
-		).map(item => item.split(' ').map(Number));
-		let num = 0;
-		let i = 0;
-		while (true) {
-			if (hoursNum === i) {
-				const currMinutes = minutes[i];
-				for (let j = 0; j < currMinutes.length; j++) {
-					num++;
-					if (currMinutes[j] === m) return num;
-				};
-				return NOT_FOUND;
-			} else num += minutes[i].length;
-			i++;
-		};
+	const getMinutes = isWeekend => table.getCeilsContent(
+		`.timetable-ceil-day-minutes.week${isWeekend ? 'end' : 'day'}s`
+	).map(item => item.split(' ').map(Number));
+
+	const getTimeArr = (hours, minutes) => {
+		const timeList = hours.reduce((acc, hour, i) => {
+			acc[hour] = minutes[i];
+			return acc;
+		}, {});
+		const timeArr = [];
+		for (const hour in timeList) timeList[hour].forEach(minutes => {
+			timeArr[timeArr.length] = hour + ':' + minutes;
+		});
+		return timeArr;
 	};
+
+	const times = {
+		weekdays: getTimeArr(hours, getMinutes(false)),
+		weekends: getTimeArr(hours, getMinutes(true)),
+		get: ({isWeekend}) => isWeekend ? times.weekends : times.weekdays
+	};
+
+	Object.assign(window, {
+		getTimeNum: (time, isWeekend = false) => {
+			let [h, m] = time.split(':').map(Number);
+			if (
+				h > lastHour ||
+				m > 60
+			) return NOT_FOUND;
+			const num = times.get({isWeekend}).indexOf(h + ':' + m) + 1;
+			return num || NOT_FOUND;
+		},
+		getNumTime: (num, isWeekend = false) => times.get({isWeekend})[num - 1] || NOT_FOUND,
+		getTime: arg => {
+			const type = typeof arg;
+			return type === 'string'
+				? getTimeNum(arg)
+				: type === 'number'
+					? getNumTime(arg)
+					: NOT_FOUND;
+		}
+	});
 })();
